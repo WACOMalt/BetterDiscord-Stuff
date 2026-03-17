@@ -1,7 +1,7 @@
 /**
  * @name SpotifyListenAlong
  * @description Enables Spotify Listen Along feature on Discord without Premium
- * @version 1.1.1
+ * @version 1.1.2
  * @author ordinall
  * @authorId 374663636347650049
  * @website https://github.com/ordinall/BetterDiscord-Stuff/tree/master/Plugins/SpotifyListenAlong/
@@ -40,16 +40,16 @@ const config = {
                 github_username: "ordinall"
             }
         ],
-        version: "1.1.1",
+        version: "1.1.2",
         description: "Enables Spotify Listen Along feature on Discord without Premium",
         github: "https://github.com/ordinall/BetterDiscord-Stuff/tree/master/Plugins/SpotifyListenAlong/",
         github_raw: "https://raw.githubusercontent.com/ordinall/BetterDiscord-Stuff/master/Plugins/SpotifyListenAlong/SpotifyListenAlong.plugin.js"
     },
     changelog: [
         {
-            title: "v1.1.1",
+            title: "v1.1.2",
             items: [
-                "Built plugin using updated BDPluginLibrary (thanks @Pdada1)"
+                "Fixed Webpack API compatibility issues"
             ]
         }
     ],
@@ -85,29 +85,40 @@ if (!global.ZeresPluginLibrary) {
 module.exports = !global.ZeresPluginLibrary ? Dummy : (([Plugin, Api]) => {
      const plugin = (Plugin, Library) => {
 
-    const { Patcher, WebpackModules } = Library;
+    const { Patcher } = Library;
+
+    // Helper for finding modules across different BD versions
+    const getModule = (filter) => {
+        if (typeof filter === "string") return BdApi.findModuleByProps(filter);
+        if (BdApi.Webpack && BdApi.Webpack.getModule) return BdApi.Webpack.getModule(filter);
+        return BdApi.findModule(filter);
+    };
+
+    const SpotifyModule = getModule(m => m.getActiveSocketAndDevice);
+    const Dispatcher = getModule(m => m.dispatch && m.subscribe);
 
     return class SpotifyListenAlong extends Plugin {
-        constructor() {
-            super();
-        }
-
         onStart() {
-            const DeviceStore = WebpackModules.getByProps('getActiveSocketAndDevice');   
-            if (DeviceStore?.getActiveSocketAndDevice) {
-                Patcher.after(
-                    DeviceStore,
-                    'getActiveSocketAndDevice',
-                    (_, args, ret) => {
-                        if ( ret?.socket ) ret.socket.isPremium = true;
-                        return ret;
+            if (SpotifyModule) {
+                Patcher.after(SpotifyModule, "getActiveSocketAndDevice", (_, args, ret) => {
+                    if (ret?.socket) ret.socket.isPremium = true;
+                    return ret;
+                });
+            }
+
+            if (Dispatcher) {
+                Patcher.instead(Dispatcher, "dispatch", (_, [action], next) => {
+                    if (action.type === "SPOTIFY_PROFILE_UPDATE" || action.type === "SPOTIFY_PROFILE_UPDATE_SUCCESS") {
+                        if (action.product) action.product = "premium";
+                        if (action.body) action.body.product = "premium";
                     }
-                );
+                    return next(action);
+                });
             }
         }
 
         onStop() {
-            Patcher.unpatchAll()
+            Patcher.unpatchAll();
         }
     };
 
