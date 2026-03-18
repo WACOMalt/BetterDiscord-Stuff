@@ -1,2 +1,1 @@
-# BetterDiscord-Stuff
-Collection of BetterDiscord plugins made by me.
+updated the listenalong one!
